@@ -121,6 +121,125 @@ async function searchIssueCount(query: string): Promise<number> {
   );
 }
 
+// All signal definitions for batch checking
+interface SignalDef {
+  key: string;
+  type: "commit" | "issue";
+  queryTemplate: (date: string) => string;
+}
+
+const SIGNALS: SignalDef[] = [
+  { key: "totalCommits", type: "commit", queryTemplate: d => `committer-date:${d}` },
+  { key: "claudeCommits", type: "commit", queryTemplate: d => `"Co-Authored-By: Claude" noreply@anthropic.com committer-date:${d}` },
+  { key: "opusCommits", type: "commit", queryTemplate: d => `"Co-Authored-By: Claude Opus" noreply@anthropic.com committer-date:${d}` },
+  { key: "sonnetCommits", type: "commit", queryTemplate: d => `"Co-Authored-By: Claude Sonnet" noreply@anthropic.com committer-date:${d}` },
+  { key: "haikuCommits", type: "commit", queryTemplate: d => `"Co-Authored-By: Claude Haiku" noreply@anthropic.com committer-date:${d}` },
+  { key: "copilotCommits", type: "commit", queryTemplate: d => `"Co-authored-by: Copilot" users.noreply.github.com committer-date:${d}` },
+  { key: "cursorCommits", type: "commit", queryTemplate: d => `"Co-authored-by: Cursor" cursoragent@cursor.com committer-date:${d}` },
+  { key: "geminiCommits", type: "commit", queryTemplate: d => `"Co-authored-by: gemini-code-assist" users.noreply.github.com committer-date:${d}` },
+  { key: "devinCommits", type: "commit", queryTemplate: d => `"Co-authored-by: Devin AI" devin-ai-integration committer-date:${d}` },
+  { key: "claudeCodeGenerated", type: "commit", queryTemplate: d => `"Generated with Claude Code" committer-date:${d}` },
+  { key: "devinBotCommits", type: "commit", queryTemplate: d => `author:devin-ai-integration[bot] committer-date:${d}` },
+  { key: "dependabotCommits", type: "commit", queryTemplate: d => `author:dependabot[bot] committer-date:${d}` },
+  { key: "renovateCommits", type: "commit", queryTemplate: d => `author:renovate[bot] committer-date:${d}` },
+  { key: "copilotReviews", type: "issue", queryTemplate: d => `is:pr created:${d} commenter:copilot-pull-request-reviewer[bot]` },
+  { key: "coderabbitReviews", type: "issue", queryTemplate: d => `is:pr created:${d} commenter:coderabbitai[bot]` },
+  { key: "sourceryReviews", type: "issue", queryTemplate: d => `is:pr created:${d} commenter:sourcery-ai[bot]` },
+  { key: "claudeCodePRs", type: "issue", queryTemplate: d => `is:pr created:${d} "Claude Code" in:body` },
+  { key: "copilotPRs", type: "issue", queryTemplate: d => `is:pr created:${d} "GitHub Copilot" in:body` },
+  { key: "cursorPRs", type: "issue", queryTemplate: d => `is:pr created:${d} "Cursor" "AI" in:body` },
+  { key: "devinPRs", type: "issue", queryTemplate: d => `is:pr created:${d} author:devin-ai-integration[bot]` },
+];
+
+/**
+ * Fast query: first checks each signal for the whole month range.
+ * Signals with 0 results for the month are skipped for individual days.
+ * This reduces API calls from 20/day to ~1-3/day for months with little AI activity.
+ */
+export async function queryMonthSignals(
+  monthRange: string // e.g. "2024-06-01..2024-06-30"
+): Promise<Set<string>> {
+  const delay = 2100;
+  const activeSignals = new Set<string>();
+  // totalCommits is always needed per-day
+  activeSignals.add("totalCommits");
+
+  for (const signal of SIGNALS) {
+    if (signal.key === "totalCommits") continue;
+
+    const query = signal.queryTemplate(monthRange);
+    const count = signal.type === "commit"
+      ? await searchCommitCount(query)
+      : await searchIssueCount(query);
+    await sleep(delay);
+
+    if (count > 0) {
+      activeSignals.add(signal.key);
+      console.log(`  [month-check] ${signal.key}: ${count} (will query daily)`);
+    }
+  }
+
+  return activeSignals;
+}
+
+/**
+ * Query a single date but only for the given active signals.
+ * Skipped signals default to 0.
+ */
+export async function queryCommitStatsSparse(
+  date: string,
+  activeSignals: Set<string>
+): Promise<DayCommitStats> {
+  const delay = 2100;
+  const results: Record<string, number> = {};
+
+  for (const signal of SIGNALS) {
+    if (activeSignals.has(signal.key)) {
+      const query = signal.queryTemplate(date);
+      results[signal.key] = signal.type === "commit"
+        ? await searchCommitCount(query)
+        : await searchIssueCount(query);
+      await sleep(delay);
+    } else {
+      results[signal.key] = 0;
+    }
+  }
+
+  const claudeCommits = results.claudeCommits;
+  const allAiCommits = claudeCommits + results.copilotCommits +
+    results.cursorCommits + results.geminiCommits + results.devinCommits;
+  const allAiReviews = results.copilotReviews + results.coderabbitReviews + results.sourceryReviews;
+  const allAiPRs = results.claudeCodePRs + results.copilotPRs + results.cursorPRs + results.devinPRs;
+
+  return {
+    date,
+    totalCommits: results.totalCommits,
+    claudeCommits,
+    opusCommits: results.opusCommits,
+    sonnetCommits: results.sonnetCommits,
+    haikuCommits: results.haikuCommits,
+    otherModelCommits: claudeCommits - results.opusCommits - results.sonnetCommits - results.haikuCommits,
+    copilotCommits: results.copilotCommits,
+    cursorCommits: results.cursorCommits,
+    geminiCommits: results.geminiCommits,
+    devinCommits: results.devinCommits,
+    claudeCodeGenerated: results.claudeCodeGenerated,
+    devinBotCommits: results.devinBotCommits,
+    dependabotCommits: results.dependabotCommits,
+    renovateCommits: results.renovateCommits,
+    copilotReviews: results.copilotReviews,
+    coderabbitReviews: results.coderabbitReviews,
+    sourceryReviews: results.sourceryReviews,
+    claudeCodePRs: results.claudeCodePRs,
+    copilotPRs: results.copilotPRs,
+    cursorPRs: results.cursorPRs,
+    devinPRs: results.devinPRs,
+    allAiCommits,
+    allAiReviews,
+    allAiPRs,
+  };
+}
+
 // Search queries for each AI tool's co-author signature
 const COMMIT_QUERIES = {
   claude: `"Co-Authored-By: Claude" noreply@anthropic.com`,
@@ -143,7 +262,7 @@ const COMMIT_QUERIES = {
 export async function queryCommitStats(
   date: string
 ): Promise<DayCommitStats> {
-  const delay = 2500;
+  const delay = 2100;
 
   // --- Commit searches (using /search/commits) ---
 

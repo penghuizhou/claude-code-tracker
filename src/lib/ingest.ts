@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { dailyStats, weeklyStats, ingestionLog } from "@/db/schema";
-import { queryCommitStats } from "./github-search";
+import { queryCommitStats, queryCommitStatsSparse } from "./github-search";
 import { format, startOfWeek, endOfWeek } from "date-fns";
 import { and, gte, lte, sql } from "drizzle-orm";
 import { DATE_FORMAT } from "./constants";
@@ -97,6 +97,106 @@ export async function ingestDate(dateStr: string): Promise<{
     });
 
     return { status: "error", error: errorMsg, durationMs };
+  }
+}
+
+/**
+ * Fast ingest: uses pre-computed active signals to skip zero-valued queries.
+ */
+export async function ingestDateFast(
+  dateStr: string,
+  activeSignals: Set<string>
+): Promise<{
+  status: "success" | "error";
+  stats?: { totalCommits: number; claudeCommits: number; allAiCommits: number };
+  error?: string;
+  durationMs: number;
+  apiCalls: number;
+}> {
+  const start = Date.now();
+
+  try {
+    const stats = await queryCommitStatsSparse(dateStr, activeSignals);
+    const claudePct =
+      stats.totalCommits > 0
+        ? (stats.claudeCommits / stats.totalCommits) * 100
+        : 0;
+    const allAiPct =
+      stats.totalCommits > 0
+        ? (stats.allAiCommits / stats.totalCommits) * 100
+        : 0;
+
+    const row = {
+      date: stats.date,
+      totalCommits: stats.totalCommits,
+      claudeCommits: stats.claudeCommits,
+      opusCommits: stats.opusCommits,
+      sonnetCommits: stats.sonnetCommits,
+      haikuCommits: stats.haikuCommits,
+      otherModelCommits: stats.otherModelCommits,
+      claudePercentage: claudePct,
+      copilotCommits: stats.copilotCommits,
+      cursorCommits: stats.cursorCommits,
+      geminiCommits: stats.geminiCommits,
+      devinCommits: stats.devinCommits,
+      claudeCodeGenerated: stats.claudeCodeGenerated,
+      devinBotCommits: stats.devinBotCommits,
+      dependabotCommits: stats.dependabotCommits,
+      renovateCommits: stats.renovateCommits,
+      copilotReviews: stats.copilotReviews,
+      coderabbitReviews: stats.coderabbitReviews,
+      sourceryReviews: stats.sourceryReviews,
+      claudeCodePRs: stats.claudeCodePRs,
+      copilotPRs: stats.copilotPRs,
+      cursorPRs: stats.cursorPRs,
+      devinPRs: stats.devinPRs,
+      allAiCommits: stats.allAiCommits,
+      allAiPercentage: allAiPct,
+      allAiReviews: stats.allAiReviews,
+      allAiPRs: stats.allAiPRs,
+    };
+
+    await db
+      .insert(dailyStats)
+      .values(row)
+      .onConflictDoUpdate({
+        target: dailyStats.date,
+        set: { ...row, createdAt: new Date().toISOString() },
+      });
+
+    await updateWeeklyRollup(dateStr);
+
+    const durationMs = Date.now() - start;
+    await db.insert(ingestionLog).values({
+      date: dateStr,
+      status: "success",
+      totalCommits: stats.totalCommits,
+      claudeCommits: stats.claudeCommits,
+      durationMs,
+    });
+
+    return {
+      status: "success",
+      stats: {
+        totalCommits: stats.totalCommits,
+        claudeCommits: stats.claudeCommits,
+        allAiCommits: stats.allAiCommits,
+      },
+      durationMs,
+      apiCalls: activeSignals.size,
+    };
+  } catch (err) {
+    const durationMs = Date.now() - start;
+    const errorMsg = err instanceof Error ? err.message : String(err);
+
+    await db.insert(ingestionLog).values({
+      date: dateStr,
+      status: "error",
+      error: errorMsg,
+      durationMs,
+    });
+
+    return { status: "error", error: errorMsg, durationMs, apiCalls: activeSignals.size };
   }
 }
 
