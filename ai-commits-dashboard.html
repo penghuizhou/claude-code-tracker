@@ -263,7 +263,7 @@ new Chart(document.getElementById('chart4'), {
   }
 });
 
-// Chart 5: npm AI SDK downloads
+// Chart 5: npm AI SDK downloads (stacked area)
 new Chart(document.getElementById('chart5'), {
   type: 'line',
   data: {
@@ -272,38 +272,44 @@ new Chart(document.getElementById('chart5'), {
       {
         label: 'openai',
         data: DATA.npm['openai'],
+        backgroundColor: 'rgba(16,163,127,0.7)',
         borderColor: 'rgba(16,163,127,0.9)',
-        pointRadius: 0, borderWidth: 2, tension: 0.3
+        fill: true, pointRadius: 0, borderWidth: 1, tension: 0.3, stack: 's'
       },
       {
         label: '@anthropic-ai/sdk',
         data: DATA.npm['@anthropic-ai/sdk'],
+        backgroundColor: 'rgba(217,119,6,0.7)',
         borderColor: 'rgba(217,119,6,0.9)',
-        pointRadius: 0, borderWidth: 2, tension: 0.3
+        fill: true, pointRadius: 0, borderWidth: 1, tension: 0.3, stack: 's'
       },
       {
         label: 'ai (Vercel)',
         data: DATA.npm['ai'],
+        backgroundColor: 'rgba(59,130,246,0.7)',
         borderColor: 'rgba(59,130,246,0.9)',
-        pointRadius: 0, borderWidth: 2, tension: 0.3
+        fill: true, pointRadius: 0, borderWidth: 1, tension: 0.3, stack: 's'
       },
       {
         label: '@langchain/core',
         data: DATA.npm['@langchain/core'],
+        backgroundColor: 'rgba(168,85,247,0.7)',
         borderColor: 'rgba(168,85,247,0.9)',
-        pointRadius: 0, borderWidth: 2, tension: 0.3
+        fill: true, pointRadius: 0, borderWidth: 1, tension: 0.3, stack: 's'
       },
       {
         label: '@google/generative-ai',
         data: DATA.npm['@google/generative-ai'],
+        backgroundColor: 'rgba(34,197,94,0.7)',
         borderColor: 'rgba(34,197,94,0.9)',
-        pointRadius: 0, borderWidth: 2, tension: 0.3
+        fill: true, pointRadius: 0, borderWidth: 1, tension: 0.3, stack: 's'
       },
       {
         label: '@aws-sdk/client-bedrock-runtime',
         data: DATA.npm['@aws-sdk/client-bedrock-runtime'],
+        backgroundColor: 'rgba(239,68,68,0.7)',
         borderColor: 'rgba(239,68,68,0.9)',
-        pointRadius: 0, borderWidth: 2, tension: 0.3
+        fill: true, pointRadius: 0, borderWidth: 1, tension: 0.3, stack: 's'
       }
     ]
   },
@@ -312,6 +318,7 @@ new Chart(document.getElementById('chart5'), {
     scales: {
       x: commonX,
       y: {
+        stacked: true,
         ticks: { color: '#999', callback: v => v >= 1000000 ? (v/1000000).toFixed(1)+'M' : (v/1000)+'K' },
         grid: yGrid
       }
