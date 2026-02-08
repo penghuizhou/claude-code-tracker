@@ -69,9 +69,9 @@
     <div class="kpi-sub">across Claude, Copilot, Cursor, Gemini, Devin</div>
   </div>
   <div class="kpi">
-    <div class="kpi-label">Total AI Commits</div>
-    <div class="kpi-value">10,587,482</div>
-    <div class="kpi-sub">cumulative over 616 days</div>
+    <div class="kpi-label">Claude % of AI Commits</div>
+    <div class="kpi-value">84.0%</div>
+    <div class="kpi-sub">Claude Code share of all AI commits (2026-02-06)</div>
   </div>
   <div class="kpi">
     <div class="kpi-label">Commits Y/Y Growth</div>
@@ -235,7 +235,8 @@ new Chart(document.getElementById('chart4'), {
     scales: {
       x: commonX,
       y: {
-        ticks: { color: '#999', callback: v => (v > 0 ? '+' : '') + v + '%' },
+        min: 0, max: 70,
+        ticks: { color: '#999', stepSize: 10, callback: v => (v > 0 ? '+' : '') + v + '%' },
         grid: yGrid
       }
     },
